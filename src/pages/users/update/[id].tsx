@@ -16,21 +16,28 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import { useMutation } from "react-query";
 import { parseCookies } from "nookies";
 
-import { Header } from "../../components/Header";
-import { Sidebar } from "../../components/Sidebar";
-import { Input } from "../../components/Form/Input";
+import { Header } from "../../../components/Header";
+import { Sidebar } from "../../../components/Sidebar";
+import { Input } from "../../../components/Form/Input";
 
-import { api } from "../../services/api";
-import { queryClient } from "../../services/queryClient";
+import { api } from "../../../services/api";
+import { queryClient } from "../../../services/queryClient";
+import { withSSRAuth } from "../../../services/hof/withSSRAuth";
+import prisma from "../../../lib/prisma";
 
-interface CreateUserFormProps {
+interface UpdateUserFormProps {
   name: string;
   email: string;
   password: string;
   password_confirmation: string;
 }
 
-const createUserFormSchema = yup.object().shape({
+interface UpdateUserProps {
+  name: string;
+  email: string;
+}
+
+const updateUserFormSchema = yup.object().shape({
   name: yup.string().required("Nome obrigatório"),
   email: yup
     .string()
@@ -45,14 +52,15 @@ const createUserFormSchema = yup.object().shape({
     .oneOf([null, yup.ref("password")], "As senhas precisam ser iguais")
 });
 
-export default function CreateUser() {
+export default function UpdateUser({ email, name }: UpdateUserProps) {
   const router = useRouter();
+  const id = Number(router.query.id);
 
-  const createUser = useMutation(
-    async (user: CreateUserFormProps) => {
+  const updateUser = useMutation(
+    async (user: UpdateUserFormProps) => {
       const cookies = parseCookies();
 
-      const response = await api.post("/users", user, {
+      const response = await api.put(`/users/${id}`, user, {
         headers: {
           Authorization: `Bearer ${cookies["@dashgo.token"]}`
         }
@@ -67,12 +75,16 @@ export default function CreateUser() {
     }
   );
 
-  const { register, handleSubmit, formState } = useForm<CreateUserFormProps>({
-    resolver: yupResolver(createUserFormSchema)
+  const { register, handleSubmit, formState } = useForm<UpdateUserFormProps>({
+    resolver: yupResolver(updateUserFormSchema),
+    defaultValues: {
+      email,
+      name
+    }
   });
 
-  const handleCreateUser: SubmitHandler<CreateUserFormProps> = async data => {
-    await createUser.mutateAsync(data);
+  const handleUpdateUser: SubmitHandler<UpdateUserFormProps> = async data => {
+    await updateUser.mutateAsync(data);
 
     router.push("/users");
   };
@@ -86,14 +98,14 @@ export default function CreateUser() {
 
         <Box
           as="form"
-          onSubmit={handleSubmit(handleCreateUser)}
+          onSubmit={handleSubmit(handleUpdateUser)}
           flex="1"
           borderRadius={8}
           bg="gray.800"
           p={["6", "8"]}
         >
           <Heading size="lg" fontWeight="normal">
-            Criar usuário
+            Atualizar usuário
           </Heading>
 
           <Divider my="6" borderColor="gray.700" />
@@ -154,3 +166,20 @@ export default function CreateUser() {
     </Box>
   );
 }
+
+export const getServerSideProps = withSSRAuth<UpdateUserProps>(async ctx => {
+  const id = Number(ctx.query.id);
+
+  const user = await prisma.user.findFirst({
+    where: {
+      id
+    }
+  });
+
+  return {
+    props: {
+      email: user.email,
+      name: user.name
+    }
+  };
+});
